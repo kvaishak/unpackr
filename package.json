@@ -13,6 +13,16 @@
     "System"
   ],
   "license": "MIT",
+  "keywords": [
+    "zip",
+    "unzip",
+    "merge",
+    "archive",
+    "google-takeout",
+    "photos",
+    "deduplication",
+    "file-management"
+  ],
   "commands": [
     {
       "name": "index",

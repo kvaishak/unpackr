@@ -67,9 +67,11 @@ export async function processTakeout(config: ProcessConfig, onProgress?: Progres
     }
 
     // Unzip all files
-    for (let i = 0; i < zipFiles.length; i++) {
-      onProgress?.("Unzipping", i + 1, zipFiles.length);
-      const zipPath = zipFiles[i];
+    let processedZips = 0;
+    await runConcurrent(zipFiles, 2, async (zipPath) => {
+      processedZips++;
+      onProgress?.("Unzipping", processedZips, zipFiles.length);
+
       const zipBasename = path.basename(zipPath, ".zip");
       const extractDir = path.join(stagingDir, zipBasename);
 
@@ -81,7 +83,7 @@ export async function processTakeout(config: ProcessConfig, onProgress?: Progres
         console.error(errorMsg);
         // Continue with other ZIPs
       }
-    }
+    });
 
     // Merge files from staging to output
     onProgress?.("Merging files", 0, 1);
@@ -183,6 +185,7 @@ async function extractZip(zipPath: string, extractDir: string, safeMode = true):
               // 10MB+
               const ratio = entry.uncompressedSize / entry.compressedSize;
               if (ratio > 100) {
+                zipfile.close();
                 throw new Error(
                   `Zip Bomb detected: File ${entry.fileName} has suspicious compression ratio (${ratio.toFixed(0)}x)`
                 );
@@ -356,38 +359,34 @@ async function getContentDirectory(dir: string): Promise<string> {
  * Recursively gets all file paths in a directory
  * Skips macOS metadata files like .DS_Store
  */
-async function getAllFiles(dir: string): Promise<string[]> {
-  const files: string[] = [];
+/**
+ * Recursively yields all file paths in a directory
+ * Skips macOS metadata files like .DS_Store
+ */
+async function* getAllFilesGenerator(dir: string): AsyncGenerator<string> {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
 
-  async function scan(currentDir: string): Promise<void> {
-    try {
-      const entries = await fs.readdir(currentDir, { withFileTypes: true });
-
-      for (const entry of entries) {
-        // Skip __MACOSX and hidden files
-        if (entry.name === "__MACOSX" || entry.name.startsWith("._")) {
-          continue;
-        }
-
-        const fullPath = path.join(currentDir, entry.name);
-
-        if (entry.isDirectory()) {
-          await scan(fullPath);
-        } else if (entry.isFile()) {
-          // Skip .DS_Store and other hidden files
-          if (!entry.name.startsWith(".")) {
-            files.push(fullPath);
-          }
-        }
-        // Skip symlinks and other special files
+    for (const entry of entries) {
+      // Skip __MACOSX and hidden files
+      if (entry.name === "__MACOSX" || entry.name.startsWith("._")) {
+        continue;
       }
-    } catch (error) {
-      console.error(`Error reading directory ${currentDir}: ${getErrorMessage(error)}`);
-    }
-  }
 
-  await scan(dir);
-  return files;
+      const fullPath = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        yield* getAllFilesGenerator(fullPath);
+      } else if (entry.isFile()) {
+        // Skip .DS_Store and other hidden files
+        if (!entry.name.startsWith(".")) {
+          yield fullPath;
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`Error reading directory ${dir}: ${getErrorMessage(error)}`);
+  }
 }
 
 /**
@@ -443,9 +442,8 @@ async function processFilesFromDirectory(
   stats: ProcessStats,
   isGooglePhotos: boolean
 ): Promise<void> {
-  const files = await getAllFiles(sourceDir);
-
-  for (const srcPath of files) {
+  // Use generator to iterate files one by one to save memory
+  for await (const srcPath of getAllFilesGenerator(sourceDir)) {
     try {
       // Calculate relative path from the base directory
       const relativePath = path.relative(baseDir, srcPath);
@@ -467,21 +465,35 @@ async function processFilesFromDirectory(
         stats.filesMerged++;
       } else {
         // File exists - check for duplicates
-        const srcHash = await calculateFileHash(srcPath);
 
-        // Get or calculate destination hash
-        let destHash = knownHashes.get(destPath);
-        if (!destHash) {
-          destHash = await calculateFileHash(destPath);
-          knownHashes.set(destPath, destHash);
+        // Optimization: Check file sizes first
+        const srcStat = await fs.stat(srcPath);
+        const destStat = await fs.stat(destPath);
+
+        let isDuplicate = false;
+
+        if (srcStat.size === destStat.size) {
+          // Sizes match, check hashes
+          const srcHash = await calculateFileHash(srcPath);
+
+          // Get or calculate destination hash
+          let destHash = knownHashes.get(destPath);
+          if (!destHash) {
+            destHash = await calculateFileHash(destPath);
+            knownHashes.set(destPath, destHash);
+          }
+
+          if (srcHash === destHash) {
+            isDuplicate = true;
+          }
         }
 
-        if (srcHash === destHash) {
+        if (isDuplicate) {
           // True duplicate - delete source
           await fs.unlink(srcPath);
           stats.duplicatesSkipped++;
         } else {
-          // Name conflict with different content - rename source
+          // Name conflict with different content (or different size) - rename source
           const newDestPath = await findUniqueFilename(destPath);
           await fs.mkdir(path.dirname(newDestPath), { recursive: true });
           await moveFile(srcPath, newDestPath);
@@ -616,4 +628,20 @@ function getErrorMessage(error: unknown): string {
     return error.message;
   }
   return String(error);
+}
+
+/**
+ * Helper to run tasks concurrently with a limit
+ */
+async function runConcurrent<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
+  const queue = [...items];
+  const workers = Array(Math.min(concurrency, items.length))
+    .fill(null)
+    .map(async () => {
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (item) await fn(item);
+      }
+    });
+  await Promise.all(workers);
 }
