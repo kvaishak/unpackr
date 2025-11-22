@@ -5,7 +5,9 @@
   "description": "Intelligently merges and organizes ZIP files with automatic deduplication. Works with Google Takeout or any ZIP files.",
   "icon": "command-icon.png",
   "author": "shak",
-  "platforms": ["macOS"],
+  "platforms": [
+    "macOS"
+  ],
   "categories": [
     "Productivity",
     "System"
@@ -14,8 +16,8 @@
   "commands": [
     {
       "name": "index",
-      "title": "Merge Google Takeout Files",
-      "description": "Unzip and merge multiple Google Takeout ZIPs into one folder",
+      "title": "Merge ZIP Files",
+      "description": "Unzip and merge multiple ZIP files into one organized folder with deduplication",
       "mode": "view"
     }
   ],
@@ -40,10 +42,13 @@
     "@raycast/utils": "^1.16.0",
     "yauzl": "^3.1.3"
   },
+  "overrides": {
+    "@types/react": "$@types/react"
+  },
   "devDependencies": {
     "@raycast/eslint-config": "^1.0.11",
     "@types/node": "^20.14.9",
-    "@types/react": "^18.3.3",
+    "@types/react": "^19.0.0",
     "@types/yauzl": "^2.10.3",
     "eslint": "^8.57.0",
     "prettier": "^3.3.2",

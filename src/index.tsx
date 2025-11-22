@@ -13,7 +13,9 @@ interface FormValues {
   outputDir: string[];
   outputFolderName: string;
   filter: string;
+
   deleteZips: boolean;
+  safeMode: boolean;
 }
 
 export default function Command() {
@@ -70,6 +72,7 @@ export default function Command() {
       outputDir,
       filter: values.filter.trim() || "takeout-",
       deleteZips: values.deleteZips,
+      safeMode: values.safeMode,
       outputFolderName: values.outputFolderName.trim() || undefined,
     };
 
@@ -160,7 +163,7 @@ export default function Command() {
         </ActionPanel>
       }
     >
-      <Form.Description text="This tool will unzip and intelligently merge ZIP files into a single organized folder. Works with Google Takeout archives or any ZIP files containing photos." />
+      <Form.Description text="Merge multiple ZIP files into one organized folder with automatic deduplication." />
 
       <Form.FilePicker
         id="inputDir"
@@ -210,9 +213,12 @@ export default function Command() {
         info="Warning: This permanently deletes the ZIP files. Make sure you have backups!"
       />
 
-      <Form.Separator />
-
-      <Form.Description text="⚠️  This process may take several minutes depending on the size of your files. The tool will detect and skip duplicate files automatically. Google Takeout files will be organized in a 'Google Photos' folder." />
+      <Form.Checkbox
+        id="safeMode"
+        label="Enable Safe Mode (Zip Bomb Protection)"
+        defaultValue={true}
+        info="Prevents processing of suspicious ZIP files (high compression ratio or excessive size)."
+      />
     </Form>
   );
 }

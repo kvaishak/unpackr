@@ -23,8 +23,10 @@ When downloading large archives (like Google Photos via Google Takeout), they're
 - ✨ **Universal ZIP Support** - Works with Google Takeout, iCloud exports, or any ZIP files
 - 🔍 **Smart Deduplication** - SHA256 hash comparison detects true duplicates
 - 🎯 **Conflict Resolution** - Auto-renames files with same name but different content
+- 🛡️ **Zip Bomb Protection** - Safe Mode detects suspicious archives with >100x compression ratios
 - 📊 **Progress Tracking** - Real-time notifications with statistics
-- 🛡️ **Safe & Secure** - Validates paths, preserves originals, handles errors gracefully
+- 📝 **Error Logging** - Automatic detailed error logs saved to input folder when issues occur
+- 🔒 **Safe & Secure** - Validates paths, preserves originals, handles errors gracefully
 - 🚀 **Fast & Efficient** - Processes large archives quickly with streaming operations
 
 ## Installation
@@ -33,13 +35,16 @@ Install from the [Raycast Store](https://raycast.com/) by searching for "Unpackr
 
 ## Usage
 
-1. Open Raycast and search for **"Merge Google Takeout Files"**
+1. Open Raycast and search for **"Merge ZIP Files"**
 2. **Input Folder**: Select folder containing your ZIP files
 3. **Output Folder**: Choose where merged files should go
 4. **Output Folder Name** *(optional)*: Create a subfolder for organized output
 5. **ZIP Filter**: Match ZIP files by name (e.g., "takeout-", "photos", "backup")
 6. **Delete ZIPs** *(optional)*: Remove originals after successful merge
-7. Click **"Start Merging"** and watch the progress!
+7. **Safe Mode** *(recommended)*: Enabled by default, protects against zip bombs (files with >100x compression ratio)
+8. Click **"Start Merging"** and watch the progress!
+
+**Note**: If any errors occur during processing, a detailed error log file (`unpackr-errors-[timestamp].log`) will be automatically created in your input folder.
 
 ### Example
 
@@ -78,7 +83,9 @@ npm run dev
 - **Raycast API** for UI
 - **yauzl** for ZIP extraction
 - **SHA256** for deduplication
-- Handles edge cases: corrupted files, permissions, cross-device moves, special characters, and more
+- **Zip Bomb Protection** with compression ratio checks (>100x)
+- **Automatic Error Logging** for troubleshooting
+- Handles edge cases: corrupted files, permissions, cross-device moves, special characters, macOS metadata, and more
 
 ## License
 

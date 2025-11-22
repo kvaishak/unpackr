@@ -9,6 +9,7 @@ export interface ProcessConfig {
   outputDir: string;
   filter: string;
   deleteZips: boolean;
+  safeMode?: boolean; // Enable Zip Bomb protection
   outputFolderName?: string; // Optional root folder name for merged contents
 }
 
@@ -25,12 +26,10 @@ export interface ProgressCallback {
 }
 
 /**
- * Main processing function that orchestrates the entire merge operation
+ * Main processing function that orchestrates the entire ZIP merge operation.
+ * Works with Google Takeout archives or any ZIP files.
  */
-export async function processTakeout(
-  config: ProcessConfig,
-  onProgress?: ProgressCallback
-): Promise<ProcessStats> {
+export async function processTakeout(config: ProcessConfig, onProgress?: ProgressCallback): Promise<ProcessStats> {
   const stats: ProcessStats = {
     zipFilesFound: 0,
     filesMerged: 0,
@@ -75,7 +74,7 @@ export async function processTakeout(
       const extractDir = path.join(stagingDir, zipBasename);
 
       try {
-        await extractZip(zipPath, extractDir);
+        await extractZip(zipPath, extractDir, config.safeMode);
       } catch (error) {
         const errorMsg = `Failed to extract ${zipBasename}: ${getErrorMessage(error)}`;
         stats.errors.push(errorMsg);
@@ -92,11 +91,20 @@ export async function processTakeout(
     onProgress?.("Cleaning up", 0, 1);
     await cleanup(stagingDir, config.deleteZips ? zipFiles : []);
 
+    // Write error log if there were any errors
+    if (stats.errors.length > 0) {
+      await writeErrorLog(config.inputDir, stats);
+    }
+
     return stats;
   } catch (error) {
     // On error, preserve staging directory for debugging
     const errorMsg = getErrorMessage(error);
     stats.errors.push(errorMsg);
+
+    // Write error log for critical failures
+    await writeErrorLog(config.inputDir, stats);
+
     throw error;
   }
 }
@@ -146,7 +154,7 @@ async function findZips(inputDir: string, filter: string): Promise<string[]> {
 /**
  * Extracts a ZIP file to the specified directory using yauzl
  */
-async function extractZip(zipPath: string, extractDir: string): Promise<void> {
+async function extractZip(zipPath: string, extractDir: string, safeMode = true): Promise<void> {
   return new Promise((resolve, reject) => {
     yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
       if (err) {
@@ -159,6 +167,8 @@ async function extractZip(zipPath: string, extractDir: string): Promise<void> {
         return;
       }
 
+      // Zip Bomb Protection: Check compression ratios during extraction
+
       let entryCount = 0;
       let errorOccurred = false;
 
@@ -166,6 +176,20 @@ async function extractZip(zipPath: string, extractDir: string): Promise<void> {
         if (errorOccurred) return;
 
         try {
+          // Zip Bomb Check (Safe Mode): Compression ratio only
+          if (safeMode) {
+            // Check compression ratio (only for reasonably large files to avoid false positives on empty/tiny files)
+            if (entry.compressedSize > 0 && entry.uncompressedSize > 10 * 1024 * 1024) {
+              // 10MB+
+              const ratio = entry.uncompressedSize / entry.compressedSize;
+              if (ratio > 100) {
+                throw new Error(
+                  `Zip Bomb detected: File ${entry.fileName} has suspicious compression ratio (${ratio.toFixed(0)}x)`
+                );
+              }
+            }
+          }
+
           const entryPath = path.join(extractDir, entry.fileName);
 
           // Security check: ensure the path doesn't escape the extract directory
@@ -539,6 +563,48 @@ async function cleanup(stagingDir: string, zipFiles: string[]): Promise<void> {
     } catch (error) {
       console.error(`Failed to delete ZIP file ${zipPath}: ${getErrorMessage(error)}`);
     }
+  }
+}
+
+/**
+ * Writes an error log file to the input directory when errors occur
+ */
+async function writeErrorLog(inputDir: string, stats: ProcessStats): Promise<void> {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const logFileName = `unpackr-errors-${timestamp}.log`;
+    const logPath = path.join(inputDir, logFileName);
+
+    const logContent = [
+      "=".repeat(80),
+      "Unpackr Error Log",
+      "=".repeat(80),
+      `Timestamp: ${new Date().toISOString()}`,
+      `Input Directory: ${inputDir}`,
+      "",
+      "Statistics:",
+      `  ZIP files found: ${stats.zipFilesFound}`,
+      `  Files merged: ${stats.filesMerged}`,
+      `  Duplicates skipped: ${stats.duplicatesSkipped}`,
+      `  Conflicts renamed: ${stats.conflictsRenamed}`,
+      `  Errors occurred: ${stats.errors.length}`,
+      "",
+      "=".repeat(80),
+      "Errors:",
+      "=".repeat(80),
+      "",
+      ...stats.errors.map((error, index) => `${index + 1}. ${error}`),
+      "",
+      "=".repeat(80),
+      "End of Error Log",
+      "=".repeat(80),
+    ].join("\n");
+
+    await fs.writeFile(logPath, logContent, "utf8");
+    console.log(`Error log written to: ${logPath}`);
+  } catch (error) {
+    // Don't throw if log writing fails - it's not critical
+    console.error(`Failed to write error log: ${getErrorMessage(error)}`);
   }
 }
 
