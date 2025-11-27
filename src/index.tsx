@@ -3,11 +3,6 @@ import React, { useState } from "react";
 import { processTakeout, ProcessConfig } from "./engine";
 import path from "path";
 
-interface Preferences {
-  defaultInputDir?: string;
-  defaultOutputDir?: string;
-}
-
 interface FormValues {
   inputDir: string[];
   outputDir: string[];
