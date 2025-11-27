@@ -125,7 +125,7 @@ async function validateDirectory(dirPath: string, label: string): Promise<void> 
     try {
       await fs.writeFile(testFile, "test");
       await fs.unlink(testFile);
-    } catch (error) {
+    } catch {
       throw new Error(`${label} is not writable: ${dirPath}`);
     }
   } catch (error) {
